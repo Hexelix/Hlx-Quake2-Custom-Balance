@@ -1,1 +1,52 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+name: Build Quake II balance DLL
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-dll:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    steps:
+      - name: Check out balance patcher
+        uses: actions/checkout@v4
+
+      - name: Download official Quake II rerelease SDK
+        uses: actions/checkout@v4
+        with:
+          repository: id-Software/quake2-rerelease-dll
+          path: quake2-sdk
+
+      - name: Install MSBuild tools
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Set up vcpkg
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git vcpkg
+          & .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed" }
+          & .\vcpkg\vcpkg.exe integrate install
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg integration failed" }
+
+      - name: Apply custom ammo, armor, and damage values
+        shell: pwsh
+        run: |
+          py -3 patch_quake2.py quake2-sdk/rerelease --edition remaster
+          if ($LASTEXITCODE -ne 0) { throw "Quake II source patch failed" }
+
+      - name: Compile DLL (Release, x64)
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
+          msbuild quake2-sdk/rerelease/game.sln /m /p:Configuration=Release /p:Platform=x64 "/p:VcpkgRoot=$vcpkg" /p:VcpkgEnableManifest=true
+          if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
+          if (!(Test-Path 'quake2-sdk/game_x64.dll')) { throw "Expected DLL not found" }
+
+      - name: Upload playable game DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: quake2-balance-remaster-win64
+          path: quake2-sdk/game_x64.dll
+          if-no-files-found: error
