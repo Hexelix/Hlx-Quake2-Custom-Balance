@@ -36,10 +36,26 @@ jobs:
           py -3 patch_quake2.py quake2-sdk/rerelease --edition remaster
           if ($LASTEXITCODE -ne 0) { throw "Quake II source patch failed" }
 
+      - name: Use C++20 standard formatting (avoid incompatible fmt 12)
+        shell: pwsh
+        run: |
+          # The SDK explicitly supports std::format under C++20.
+          $project = 'quake2-sdk/rerelease/game.vcxproj'
+          $xml = Get-Content $project -Raw
+          $xml = $xml.Replace('<LanguageStandard>stdcpp17</LanguageStandard>', '<LanguageStandard>stdcpp20</LanguageStandard>')
+          if ($xml -notmatch 'stdcpp20' -or $xml -match '<LanguageStandard>stdcpp17</LanguageStandard>') { throw 'Failed to enable C++20' }
+          $xml = $xml.Replace('NO_FMT_SOURCE;', 'NO_FMT_SOURCE;USE_CPP20_FORMAT;')
+          if ($xml -notmatch 'USE_CPP20_FORMAT;') { throw 'Failed to set USE_CPP20_FORMAT' }
+          Set-Content -Path $project -Value $xml -Encoding UTF8
+          $manifest = 'quake2-sdk/rerelease/vcpkg.json'
+          $json = Get-Content $manifest -Raw | ConvertFrom-Json
+          $json.dependencies = @($json.dependencies | Where-Object { $_ -ne 'fmt' })
+          $json | ConvertTo-Json -Depth 8 | Set-Content -Path $manifest -Encoding UTF8
+
       - name: Compile DLL (Release, x64)
         shell: pwsh
         run: |
-          # fmt 12 requires UTF-8 source/execution character sets for MSVC.
+          # Keep MSVC source and execution encodings consistent.
           # The CL environment variable applies to every cl.exe invocation.
           $env:CL = '/utf-8'
           $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
