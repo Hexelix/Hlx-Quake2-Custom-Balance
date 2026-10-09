@@ -56,14 +56,19 @@ jobs:
         shell: pwsh
         run: |
           # Newer MSVC enforces formatter<T>::format() const.
-          foreach ($header in @('q_vec3.h', 'g_local.h')) {
-            $path = Join-Path 'quake2-sdk/rerelease' $header
+          foreach ($entry in @(
+            @{ Header = 'q_vec3.h'; Type = 'vec3_t' },
+            @{ Header = 'g_local.h'; Type = 'edict_t' }
+          )) {
+            $path = Join-Path 'quake2-sdk/rerelease' $entry.Header
             $source = [System.IO.File]::ReadAllText($path)
-            $pattern = 'auto format(const (vec3_t|edict_t) &p, FormatContext &ctx) -> decltype(ctx.out())'
-            $matches = [regex]::Matches($source, $pattern)
-            if ($matches.Count -ne 1) { throw "Expected exactly one formatter in $header; found $($matches.Count)" }
-            $source = [regex]::Replace($source, $pattern, 'auto format(const $1 &p, FormatContext &ctx) const -> decltype(ctx.out())')
+            $old = 'auto format(const ' + $entry.Type + ' &p, FormatContext &ctx) -> decltype(ctx.out())'
+            $new = 'auto format(const ' + $entry.Type + ' &p, FormatContext &ctx) const -> decltype(ctx.out())'
+            $count = ([regex]::Matches($source, [regex]::Escape($old))).Count
+            if ($count -ne 1) { throw "Expected one formatter in $($entry.Header); found $count" }
+            $source = $source.Replace($old, $new)
             [System.IO.File]::WriteAllText($path, $source)
+            Write-Host "Patched formatter in $($entry.Header)"
           }
 
       - name: Compile DLL (Release, x64)
