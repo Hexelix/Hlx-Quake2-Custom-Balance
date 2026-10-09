@@ -39,6 +39,9 @@ jobs:
       - name: Compile DLL (Release, x64)
         shell: pwsh
         run: |
+          # fmt 12 requires UTF-8 source/execution character sets for MSVC.
+          # The CL environment variable applies to every cl.exe invocation.
+          $env:CL = '/utf-8'
           $vcpkg = Join-Path $env:GITHUB_WORKSPACE 'vcpkg'
           msbuild quake2-sdk/rerelease/game.sln /m /p:Configuration=Release /p:Platform=x64 "/p:VcpkgRoot=$vcpkg" /p:VcpkgEnableManifest=true
           if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
