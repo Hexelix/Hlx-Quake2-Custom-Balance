@@ -52,6 +52,20 @@ jobs:
           $json.dependencies = @($json.dependencies | Where-Object { $_ -ne 'fmt' })
           $json | ConvertTo-Json -Depth 8 | Set-Content -Path $manifest -Encoding UTF8
 
+      - name: Fix SDK C++20 formatter const-correctness
+        shell: pwsh
+        run: |
+          # Newer MSVC enforces formatter<T>::format() const.
+          foreach ($header in @('q_vec3.h', 'g_local.h')) {
+            $path = Join-Path 'quake2-sdk/rerelease' $header
+            $source = [System.IO.File]::ReadAllText($path)
+            $pattern = 'auto format(const (vec3_t|edict_t) &p, FormatContext &ctx) -> decltype(ctx.out())'
+            $matches = [regex]::Matches($source, $pattern)
+            if ($matches.Count -ne 1) { throw "Expected exactly one formatter in $header; found $($matches.Count)" }
+            $source = [regex]::Replace($source, $pattern, 'auto format(const $1 &p, FormatContext &ctx) const -> decltype(ctx.out())')
+            [System.IO.File]::WriteAllText($path, $source)
+          }
+
       - name: Compile DLL (Release, x64)
         shell: pwsh
         run: |
