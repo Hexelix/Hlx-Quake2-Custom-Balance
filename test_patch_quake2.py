@@ -190,6 +190,11 @@ class PatcherTests(unittest.TestCase):
                     self.assertIn(f'Q2ModScaleDamage({source_damage}, {percent})', new_weapon)
                 self.assertIn('void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }', new_weapon)
                 self.assertEqual(new_weapon.count('static int Q2ModScaleDamage'), 1)
+                # Every use must follow the helper definition in the generated C++.
+                self.assertLess(new_weapon.index('static int Q2ModScaleDamage'),
+                                new_weapon.index('void Weapon_RocketLauncher_Fire'))
+                self.assertLess(new_weapon.index('static int Q2ModScaleDamage'),
+                                new_weapon.index('damage = Q2ModScaleDamage(damage, 75);'))
                 self.assertIn('(DEFAULT_BULLET_HSPREAD / 2), (DEFAULT_BULLET_VSPREAD / 2), MOD_MACHINEGUN', new_weapon)
                 self.assertNotIn('kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_MACHINEGUN', new_weapon)
                 self.assertNotIn('self->owner->health -= 1;', new_items)
@@ -200,6 +205,11 @@ class PatcherTests(unittest.TestCase):
                     self.assertNotIn('ent->health--;', patched[3])
                     self.assertNotIn('megahealth_time -= FRAME_TIME_S;', patched[3])
                     self.assertIn('ent->client->pers.megahealth_time = 0_ms;', patched[3])
+                    # The generated C++ must contain real line breaks, not
+                    # literal backslash-n/backslash-t escape sequences.
+                    self.assertIn('{' + chr(10) + '    // Keep overhealth permanently;', patched[3])
+                    self.assertNotIn(chr(92) + 'n', patched[3])
+                    self.assertNotIn(chr(92) + 't', patched[3])
                 self.assertEqual(new_weapon.count('radius = (damage + 40) * 2.0f;'), 2)
                 self.assertIn('damage = Q2ModScaleDamage(damage, 75);', new_weapon)
                 self.assertIn('int radius_damage = 120;', new_weapon)
