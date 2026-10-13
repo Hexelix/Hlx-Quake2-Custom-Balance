@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply custom Quake II ammo limits, weapon damage, and armor pickup values.
+"""Apply custom Quake II ammo, weapon, armor, and permanent Mega Health changes.
 
 Works on the original id Software Quake-2 game source (classic) or the
 id Software quake2-rerelease-dll SDK (2023 remaster). Requires pristine source.
@@ -53,7 +53,10 @@ def change_number(src, pattern, stock, target, label):
 
 
 def function_segment(src, name, return_type):
-    pat = r'\b' + re.escape(return_type) + r'\s+' + re.escape(name) + r'\s*\('
+    if return_type == 'THINK':
+        pat = r'\bTHINK\s*\(\s*' + re.escape(name) + r'\s*\)\s*\('
+    else:
+        pat = r'\b' + re.escape(return_type) + r'\s+' + re.escape(name) + r'\s*\('
     matches = list(re.finditer(pat, src))
     if len(matches) != 1:
         raise ValueError(f'{name}: expected one definition, found {len(matches)}')
@@ -208,12 +211,55 @@ def edit_weapon(src, edition):
     return src
 
 
+def edit_megahealth_think(src, edition):
+    """Stop Mega Health decay while preserving item cleanup/DM respawning."""
+    def transform(body):
+        start_marker = 'if (self->owner->health > self->owner->max_health'
+        end_marker = 'if (!(self->spawnflags & '
+        if body.count(start_marker) != 1 or body.count(end_marker) != 1:
+            raise ValueError('MegaHealth_think: stock decay/respawn logic not found')
+        start, end = body.index(start_marker), body.index(end_marker)
+        if end <= start:
+            raise ValueError('MegaHealth_think: unexpected source ordering')
+        decay = body[start:end]
+        if (decay.count('self->owner->health -= 1;') != 1
+                or decay.count('self->nextthink = level.time + ') != 1
+                or decay.count('return;') != 1
+                or decay.count('}') != 1):
+            raise ValueError('MegaHealth_think: unexpected stock decay logic')
+        # Keep the normal deathmatch item respawn / single-player cleanup.
+        return body[:start] + body[end:]
+    return edit_function(src, 'MegaHealth_think',
+                         'THINK' if edition == 'remaster' else 'void',
+                         transform)
+
+
+def edit_megahealth_player(src):
+    """Disable remaster single-player decay, including timers in old saves."""
+    def transform(body):
+        if (body.count('ent->health--;') != 1
+                or body.count('ent->client->pers.megahealth_time -= FRAME_TIME_S;') != 1):
+            raise ValueError('P_RunMegaHealth: expected stock single-player decay logic')
+        return ('{\\n'
+                '\\t// Keep overhealth permanently; clear any timer loaded from a save.\\n'
+                '\\tent->client->pers.megahealth_time = 0_ms;\\n'
+                '}')
+    return edit_function(src, 'P_RunMegaHealth', 'void', transform)
+
+
 def patch_sources(originals, edition):
-    return [
+    expected = 4 if edition == 'remaster' else 3
+    if len(originals) != expected:
+        raise ValueError(f'{edition}: expected {expected} source files, got {len(originals)}')
+    patched = [
         edit_initial(originals[0], edition),
-        edit_armor(edit_upgrades(originals[1], edition), edition),
+        edit_megahealth_think(
+            edit_armor(edit_upgrades(originals[1], edition), edition), edition),
         edit_weapon(originals[2], edition),
     ]
+    if edition == 'remaster':
+        patched.append(edit_megahealth_player(originals[3]))
+    return patched
 
 
 def main(argv=None):
@@ -227,7 +273,10 @@ def main(argv=None):
     root = args.source
     if not (root / ('p_client' + ext)).is_file():
         root = root / suffix
-    paths = [root / (name + ext) for name in ('p_client', 'g_items', 'p_weapon')]
+    names = ('p_client', 'g_items', 'p_weapon')
+    if args.edition == 'remaster':
+        names += ('p_view',)
+    paths = [root / (name + ext) for name in names]
     for path in paths:
         if not path.is_file():
             parser.error(f'Source not found: {path}')
@@ -258,7 +307,7 @@ def main(argv=None):
         for path, raw in zip(paths, originals):
             path.write_bytes(raw)
         raise
-    print('\nPatched all 3 source files. Original versions saved as *.balance-original.bak.')
+    print(f'\nPatched all {len(paths)} source files. Original versions saved as *.balance-original.bak.')
     print('Compile your game module using the source SDK / engine build system.')
     return 0
 
