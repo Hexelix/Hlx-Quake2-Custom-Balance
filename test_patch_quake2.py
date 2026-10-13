@@ -130,7 +130,7 @@ def fixture_weapon(edition):
         'void Blaster_Fire(edict_t *ent) { /* projectiles */ }',
         f'void Weapon_Blaster_Fire(edict_t *ent) {{ {blaster} }}',
         'void Weapon_HyperBlaster_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 15; else damage = 20; }',
-        'void Machinegun_Fire(edict_t *ent) { int damage = 8; int kick = 2; }',
+        'void Machinegun_Fire(edict_t *ent) { int damage = 8; int kick = 2; fire_bullet(ent, start, dir, damage, kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_MACHINEGUN); }',
         'void Chaingun_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 6; else damage = 8; }',
         'void weapon_shotgun_fire(edict_t *ent) { int damage = 4; int kick = 8; }',
         'void weapon_supershotgun_fire(edict_t *ent) { int damage = 6; int kick = 12; }',
@@ -167,6 +167,8 @@ class PatcherTests(unittest.TestCase):
                     self.assertIn(f'Q2ModScaleDamage({source_damage}, {percent})', new_weapon)
                 self.assertIn('void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }', new_weapon)
                 self.assertEqual(new_weapon.count('static int Q2ModScaleDamage'), 1)
+                self.assertIn('(DEFAULT_BULLET_HSPREAD / 2), (DEFAULT_BULLET_VSPREAD / 2), MOD_MACHINEGUN', new_weapon)
+                self.assertNotIn('kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_MACHINEGUN', new_weapon)
                 self.assertNotIn('self->owner->health -= 1;', new_items)
                 self.assertIn('SetRespawn(self, 20_sec);' if edition == 'remaster'
                               else 'SetRespawn(self, 20);', new_items)
