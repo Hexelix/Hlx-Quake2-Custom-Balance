@@ -165,6 +165,21 @@ def edit_armor(src, edition):
                          transform)
 
 
+def edit_machinegun_spread(src):
+    """Halve both machinegun bullet spread axes, leaving other guns unchanged."""
+    def transform(body):
+        pattern = (r'\bDEFAULT_BULLET_HSPREAD\s*,\s*'
+                   r'DEFAULT_BULLET_VSPREAD\s*,\s*MOD_MACHINEGUN\b')
+        matches = list(re.finditer(pattern, body))
+        if len(matches) != 1:
+            raise ValueError(
+                f'Machinegun_Fire: expected one stock spread call, got {len(matches)}')
+        replacement = ('(DEFAULT_BULLET_HSPREAD / 2), '
+                       '(DEFAULT_BULLET_VSPREAD / 2), MOD_MACHINEGUN')
+        return body[:matches[0].start()] + replacement + body[matches[0].end():]
+    return edit_function(src, 'Machinegun_Fire', 'void', transform)
+
+
 def edit_weapon(src, edition):
     # Multiply base damage by 120/100 or 150/100. Since Quake II damage is
     # integer, round *stochastically* (unbiased over many shots). Each shotgun
@@ -208,7 +223,7 @@ def edit_weapon(src, edition):
     if len(ms) != 1:
         raise ValueError('Could not locate Blaster_Fire definition to insert damage helper')
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
-    return src
+    return edit_machinegun_spread(src)
 
 
 def edit_megahealth_think(src, edition):
