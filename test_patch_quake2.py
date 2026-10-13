@@ -80,6 +80,22 @@ def fixture_megahealth(edition):
 """
 
 
+def fixture_explosives(edition):
+    if edition == 'remaster':
+        return """THINK(Grenade_Explode) (edict_t *ent) -> void
+{
+    if (ent->enemy) { T_Damage(ent->enemy, ent, ent->owner, dir, ent->s.origin, vec3_origin, (int) points, (int) points, DAMAGE_RADIUS, mod); }
+    T_RadiusDamage(ent, ent->owner, (float) ent->dmg, ent->enemy, ent->dmg_radius, DAMAGE_NONE, mod);
+}
+"""
+    return """void Grenade_Explode (edict_t *ent)
+{
+    if (ent->enemy) { T_Damage(ent->enemy, ent, ent->owner, dir, ent->s.origin, vec3_origin, (int)points, (int)points, DAMAGE_RADIUS, mod); }
+    T_RadiusDamage(ent, ent->owner, ent->dmg, ent->enemy, ent->dmg_radius, mod);
+}
+"""
+
+
 def fixture_view():
     return """static void P_RunMegaHealth(edict_t *ent)
 {
@@ -134,6 +150,12 @@ def fixture_weapon(edition):
         'void Chaingun_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 6; else damage = 8; }',
         'void weapon_shotgun_fire(edict_t *ent) { int damage = 4; int kick = 8; }',
         'void weapon_supershotgun_fire(edict_t *ent) { int damage = 6; int kick = 12; }',
+        'void weapon_grenade_fire(edict_t *ent, bool held) { int damage = 125; float radius; radius = (float) (damage + 40); }' if edition == 'remaster' else
+        'void weapon_grenade_fire(edict_t *ent, qboolean held) { int damage = 125; float radius; radius = damage+40; }',
+        'void weapon_grenadelauncher_fire(edict_t *ent) { int damage = 120; float radius; radius = (float) (damage + 40); }' if edition == 'remaster' else
+        'void weapon_grenadelauncher_fire(edict_t *ent) { int damage = 120; float radius; radius = damage+40; }',
+        'void Weapon_RocketLauncher_Fire(edict_t *ent) { int damage; damage = irandom(100, 120); int radius_damage = 120; }' if edition == 'remaster' else
+        'void Weapon_RocketLauncher_Fire(edict_t *ent) { int damage; damage = 100 + (int)(random() * 20.0); int radius_damage = 120; }',
         'void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }',
     ])
 
@@ -145,6 +167,7 @@ class PatcherTests(unittest.TestCase):
                 original = [fixture_client(edition), fixture_upgrade(edition), fixture_weapon(edition)]
                 if edition == 'remaster':
                     original.append(fixture_view())
+                original.append(fixture_explosives(edition))
                 patched = patch_sources(original, edition)
                 new_client, new_items, new_weapon = patched[:3]
                 for ammo, (base, bandolier, pack) in CAPS.items():
@@ -177,6 +200,11 @@ class PatcherTests(unittest.TestCase):
                     self.assertNotIn('ent->health--;', patched[3])
                     self.assertNotIn('megahealth_time -= FRAME_TIME_S;', patched[3])
                     self.assertIn('ent->client->pers.megahealth_time = 0_ms;', patched[3])
+                self.assertEqual(new_weapon.count('radius = (damage + 40) * 2.0f;'), 2)
+                self.assertIn('damage = Q2ModScaleDamage(damage, 75);', new_weapon)
+                self.assertIn('int radius_damage = 120;', new_weapon)
+                self.assertIn('ent->owner->client ? 1.5f : 1.0f', patched[-1])
+                self.assertIn('T_Damage(', patched[-1])
                 self.assertNotEqual(original[0], new_client)
                 self.assertNotEqual(original[1], new_items)
                 self.assertNotEqual(original[2], new_weapon)
@@ -197,6 +225,8 @@ class PatcherTests(unittest.TestCase):
                 if edition == 'remaster':
                     files.append(root / 'p_view.cpp')
                     originals.append(fixture_view())
+                files.append(root / ('g_weapon' + ext))
+                originals.append(fixture_explosives(edition))
                 for f, contents in zip(files, originals):
                     f.write_text(contents, encoding='utf8')
                 self.assertEqual(main([str(root), '--edition', edition, '--dry-run']), 0)
