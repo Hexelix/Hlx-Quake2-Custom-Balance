@@ -12,6 +12,12 @@ jobs:
       - name: Check out balance patcher
         uses: actions/checkout@v4
 
+      - name: Test source patcher
+        shell: pwsh
+        run: |
+          py -3 -m unittest -q test_patch_quake2.py
+          if ($LASTEXITCODE -ne 0) { throw "Source patcher regression tests failed" }
+
       - name: Download official Quake II rerelease SDK
         uses: actions/checkout@v4
         with:
