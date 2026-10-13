@@ -17,6 +17,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 
 - Shotgun, Super Shotgun, Machinegun, Chaingun: **+20% damage**.
 - Blaster and HyperBlaster: **+50% damage**.
+- Machinegun bullet spread: **50% of stock**, horizontally and vertically. Chaingun spread and machinegun recoil remain unchanged.
 - Jacket Armor: **50** instead of 25.
 - Combat Armor: **100** instead of 50.
 - Body Armor: **200** instead of 100.
