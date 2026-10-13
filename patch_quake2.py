@@ -223,7 +223,7 @@ def edit_weapon(src, edition):
     if len(ms) != 1:
         raise ValueError('Could not locate Blaster_Fire definition to insert damage helper')
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
-    return edit_machinegun_spread(src)
+    return edit_explosive_weapons(edit_machinegun_spread(src), edition)
 
 
 def edit_megahealth_think(src, edition):
@@ -262,8 +262,53 @@ def edit_megahealth_player(src):
     return edit_function(src, 'P_RunMegaHealth', 'void', transform)
 
 
+def edit_explosive_weapons(src, edition):
+    """Double player grenade radii and increase rocket impact damage 75%."""
+    for name, stock in (('weapon_grenade_fire', 125),
+                        ('weapon_grenadelauncher_fire', 120)):
+        def change(body):
+            pat = r'\bradius\s*=\s*(?:\(float\)\s*\()?\s*\(?damage\s*\+\s*40\)?\s*;'
+            matches = list(re.finditer(pat, body))
+            if len(matches) != 1:
+                raise ValueError(f'{name}: expected stock radius calculation')
+            m = matches[0]
+            return body[:m.start()] + 'radius = (damage + 40) * 2.0f;' + body[m.end():]
+        src = edit_function(src, name, 'void', change)
+    def rocket(body):
+        pat = (r'\bdamage\s*=\s*(?:irandom\(100,\s*120\)|'
+               r'100\s*\+\s*\(int\)\s*\(random\(\)\s*\*\s*20\.0\))\s*;')
+        m = list(re.finditer(pat, body))
+        if len(m) != 1:
+            raise ValueError('RocketLauncher: expected stock damage initialization')
+        x = m[0]
+        return (body[:x.end()] + '\n\tdamage = Q2ModScaleDamage(damage, 75);'
+                + body[x.end():])
+    return edit_function(src, 'Weapon_RocketLauncher_Fire', 'void', rocket)
+
+
+def edit_grenade_splash(src, edition):
+    """Increase player grenade splash only, not impact or monster attacks."""
+    def transform(body):
+        if edition == 'remaster':
+            old = 'T_RadiusDamage(ent, ent->owner, (float) ent->dmg, ent->enemy, ent->dmg_radius, DAMAGE_NONE, mod);'
+            new = ('T_RadiusDamage(ent, ent->owner, '
+                   '(float) ent->dmg * (ent->owner->client ? 1.5f : 1.0f), '
+                   'ent->enemy, ent->dmg_radius, DAMAGE_NONE, mod);')
+        else:
+            old = 'T_RadiusDamage(ent, ent->owner, ent->dmg, ent->enemy, ent->dmg_radius, mod);'
+            new = ('T_RadiusDamage(ent, ent->owner, '
+                   '(int) (ent->dmg * (ent->owner->client ? 1.5f : 1.0f)), '
+                   'ent->enemy, ent->dmg_radius, mod);')
+        if body.count(old) != 1:
+            raise ValueError('Grenade_Explode: expected stock splash damage call')
+        return body.replace(old, new)
+    return edit_function(src, 'Grenade_Explode',
+                         'THINK' if edition == 'remaster' else 'void',
+                         transform)
+
+
 def patch_sources(originals, edition):
-    expected = 4 if edition == 'remaster' else 3
+    expected = 5 if edition == 'remaster' else 4
     if len(originals) != expected:
         raise ValueError(f'{edition}: expected {expected} source files, got {len(originals)}')
     patched = [
@@ -274,6 +319,7 @@ def patch_sources(originals, edition):
     ]
     if edition == 'remaster':
         patched.append(edit_megahealth_player(originals[3]))
+    patched.append(edit_grenade_splash(originals[-1], edition))
     return patched
 
 
@@ -291,6 +337,7 @@ def main(argv=None):
     names = ('p_client', 'g_items', 'p_weapon')
     if args.edition == 'remaster':
         names += ('p_view',)
+    names += ('g_weapon',)
     paths = [root / (name + ext) for name in names]
     for path in paths:
         if not path.is_file():
