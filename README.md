@@ -18,6 +18,8 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Shotgun, Super Shotgun, Machinegun, Chaingun: **+20% damage**.
 - Blaster and HyperBlaster: **+50% damage**.
 - Machinegun bullet spread: **50% of stock**, horizontally and vertically. Chaingun spread and machinegun recoil remain unchanged.
+- Hand grenade and Grenade Launcher: **+50% splash damage**, **+100% explosion radius** (double the original radius); direct-contact damage unchanged.
+- Rocket Launcher: **+75% direct-impact damage**; rocket splash damage and radius unchanged.
 - Jacket Armor: **50** instead of 25.
 - Combat Armor: **100** instead of 50.
 - Body Armor: **200** instead of 100.
@@ -58,7 +60,7 @@ If the writable Saved Games location is different on your system, locate the gam
 
 3. Build the game DLL with a Windows-compatible toolchain as described in the SDK documentation.
 
-You can also preview all changes with `--dry-run`. The patcher automatically makes `*.balance-original.bak` backups of the edited source files (`p_client`, `g_items`, `p_weapon`, and remaster-only `p_view`). Apply only to **pristine official source**; it refuses already-patched files.
+You can also preview all changes with `--dry-run`. The patcher automatically makes `*.balance-original.bak` backups of the edited source files (`p_client`, `g_items`, `p_weapon`, `g_weapon`, and remaster-only `p_view`). Apply only to **pristine official source**; it refuses already-patched files.
 
 To patch a classic Quake II source checkout, use `--edition classic`. The 2023 DLL is not compatible with classic-engine mods and vice versa.
 
