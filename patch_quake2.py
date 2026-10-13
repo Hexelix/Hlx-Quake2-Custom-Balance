@@ -222,11 +222,11 @@ def edit_weapon(src, edition):
         '\treturn whole;\n'
         '}\n\n'
     )
-    # Insert between #includes and function definitions, in both source layouts.
-    anchor = re.compile(r'^void\s+Blaster_Fire\s*\(', re.MULTILINE)
+    # Insert before the first patched rocket damage call (and subsequent weapons).
+    anchor = re.compile(r'^void\s+Weapon_RocketLauncher_Fire\s*\(', re.MULTILINE)
     ms = list(anchor.finditer(src))
     if len(ms) != 1:
-        raise ValueError('Could not locate Blaster_Fire definition to insert damage helper')
+        raise ValueError('Could not locate RocketLauncher_Fire definition to insert damage helper')
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
     return edit_explosive_weapons(edit_machinegun_spread(src), edition)
 
@@ -260,10 +260,11 @@ def edit_megahealth_player(src):
         if (body.count('ent->health--;') != 1
                 or body.count('ent->client->pers.megahealth_time -= FRAME_TIME_S;') != 1):
             raise ValueError('P_RunMegaHealth: expected stock single-player decay logic')
-        return ('{\\n'
-                '\\t// Keep overhealth permanently; clear any timer loaded from a save.\\n'
-                '\\tent->client->pers.megahealth_time = 0_ms;\\n'
-                '}')
+        return chr(10).join((
+            '{',
+            '    // Keep overhealth permanently; clear any timer loaded from a save.',
+            '    ent->client->pers.megahealth_time = 0_ms;',
+            '}'))
     return edit_function(src, 'P_RunMegaHealth', 'void', transform)
 
 
