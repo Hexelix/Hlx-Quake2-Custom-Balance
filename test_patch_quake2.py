@@ -45,6 +45,66 @@ def fixture_armor(edition):
         '}\n')
 
 
+def fixture_megahealth(edition):
+    if edition == 'remaster':
+        return """THINK(MegaHealth_think) (edict_t *self) -> void
+{
+    if (self->owner->health > self->owner->max_health
+        && !CTFHasRegeneration(self->owner))
+    {
+        self->nextthink = level.time + 1_sec;
+        self->owner->health -= 1;
+        return;
+    }
+
+    if (!(self->spawnflags & SPAWNFLAG_ITEM_DROPPED) && deathmatch->integer)
+        SetRespawn(self, 20_sec);
+    else
+        G_FreeEdict(self);
+}
+"""
+    return """void MegaHealth_think (edict_t *self)
+{
+    if (self->owner->health > self->owner->max_health)
+    {
+        self->nextthink = level.time + 1;
+        self->owner->health -= 1;
+        return;
+    }
+
+    if (!(self->spawnflags & DROPPED_ITEM) && deathmatch->value)
+        SetRespawn(self, 20);
+    else
+        G_FreeEdict(self);
+}
+"""
+
+
+def fixture_view():
+    return """static void P_RunMegaHealth(edict_t *ent)
+{
+    if (!ent->client->pers.megahealth_time)
+        return;
+    else if (ent->health <= ent->max_health)
+    {
+        ent->client->pers.megahealth_time = 0_ms;
+        return;
+    }
+
+    ent->client->pers.megahealth_time -= FRAME_TIME_S;
+
+    if (ent->client->pers.megahealth_time <= 0_ms)
+    {
+        ent->health--;
+        if (ent->health > ent->max_health)
+            ent->client->pers.megahealth_time = 1000_ms;
+        else
+            ent->client->pers.megahealth_time = 0_ms;
+    }
+}
+"""
+
+
 def fixture_upgrade(edition):
     output = ''
     for func, values in (('Pickup_Bandolier', BANDOLIER_STOCK), ('Pickup_Pack', PACK_STOCK)):
@@ -58,7 +118,7 @@ def fixture_upgrade(edition):
         if edition == 'remaster':
             output += ' G_AdjustAmmoCap(other, AMMO_MAGSLUG, 75);\n' if func == 'Pickup_Bandolier' else ' G_AdjustAmmoCap(other, AMMO_MAGSLUG, 100);\n'
         output += '}\n'
-    return output + fixture_armor(edition)
+    return output + fixture_megahealth(edition) + fixture_armor(edition)
 
 
 def fixture_weapon(edition):
@@ -83,7 +143,10 @@ class PatcherTests(unittest.TestCase):
         for edition in ('classic', 'remaster'):
             with self.subTest(edition=edition):
                 original = [fixture_client(edition), fixture_upgrade(edition), fixture_weapon(edition)]
-                new_client, new_items, new_weapon = patch_sources(original, edition)
+                if edition == 'remaster':
+                    original.append(fixture_view())
+                patched = patch_sources(original, edition)
+                new_client, new_items, new_weapon = patched[:3]
                 for ammo, (base, bandolier, pack) in CAPS.items():
                     if edition == 'classic':
                         self.assertIn(f'client->pers.max_{ammo} = {base};', new_client)
@@ -104,11 +167,19 @@ class PatcherTests(unittest.TestCase):
                     self.assertIn(f'Q2ModScaleDamage({source_damage}, {percent})', new_weapon)
                 self.assertIn('void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }', new_weapon)
                 self.assertEqual(new_weapon.count('static int Q2ModScaleDamage'), 1)
+                self.assertNotIn('self->owner->health -= 1;', new_items)
+                self.assertIn('SetRespawn(self, 20_sec);' if edition == 'remaster'
+                              else 'SetRespawn(self, 20);', new_items)
+                self.assertIn('G_FreeEdict(self);', new_items)
+                if edition == 'remaster':
+                    self.assertNotIn('ent->health--;', patched[3])
+                    self.assertNotIn('megahealth_time -= FRAME_TIME_S;', patched[3])
+                    self.assertIn('ent->client->pers.megahealth_time = 0_ms;', patched[3])
                 self.assertNotEqual(original[0], new_client)
                 self.assertNotEqual(original[1], new_items)
                 self.assertNotEqual(original[2], new_weapon)
                 with self.assertRaises(ValueError):
-                    patch_sources([new_client, new_items, new_weapon], edition)
+                    patch_sources(patched, edition)
                 if edition == 'remaster':
                     self.assertIn('client->pers.max_ammo.fill(50)', new_client)
                     self.assertIn('G_AdjustAmmoCap(other, AMMO_MAGSLUG, 75)', new_items)
@@ -121,6 +192,9 @@ class PatcherTests(unittest.TestCase):
                 ext = '.c' if edition == 'classic' else '.cpp'
                 files = [root / ('p_client' + ext), root / ('g_items' + ext), root / ('p_weapon' + ext)]
                 originals = [fixture_client(edition), fixture_upgrade(edition), fixture_weapon(edition)]
+                if edition == 'remaster':
+                    files.append(root / 'p_view.cpp')
+                    originals.append(fixture_view())
                 for f, contents in zip(files, originals):
                     f.write_text(contents, encoding='utf8')
                 self.assertEqual(main([str(root), '--edition', edition, '--dry-run']), 0)
