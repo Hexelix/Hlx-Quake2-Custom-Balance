@@ -57,11 +57,16 @@ def function_segment(src, name, return_type):
         pat = r'\bTHINK\s*\(\s*' + re.escape(name) + r'\s*\)\s*\('
     else:
         pat = r'\b' + re.escape(return_type) + r'\s+' + re.escape(name) + r'\s*\('
-    matches = list(re.finditer(pat, src))
-    if len(matches) != 1:
-        raise ValueError(f'{name}: expected one definition, found {len(matches)}')
-    # Find opening brace, balancing only the function body (not external code).
-    brace = src.find('{', matches[0].end())
+    candidates = []
+    for match in re.finditer(pat, src):
+        brace = src.find('{', match.end())
+        semicolon = src.find(';', match.end())
+        if brace >= 0 and (semicolon < 0 or brace < semicolon):
+            candidates.append(brace)
+    if len(candidates) != 1:
+        raise ValueError(f'{name}: expected one definition, found {len(candidates)}')
+    # Ignore forward declarations and balance only the function body.
+    brace = candidates[0]
     if brace < 0:
         raise ValueError(f'{name}: function body not found')
     depth = 0
