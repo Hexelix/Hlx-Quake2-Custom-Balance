@@ -532,7 +532,7 @@ def edit_powerup_stack(src, edition):
             raise ValueError('Pickup_Powerup: expected official stock skill caps')
         # Shared-coop item uniqueness remains intact: this changes capacity,
         # not the rule against repeatedly taking a unique shared-world item.
-        return body.replace(old, 'if (quantity >= 3)')
+        return body.replace(old, f'if (quantity >= {POWERUP_STACK_LIMIT})')
     return edit_function(src, 'Pickup_Powerup',
                          'bool' if edition == 'remaster' else 'qboolean',
                          transform)
@@ -544,13 +544,13 @@ def edit_rogue_powerup_stack(src):
         old = 'if (quantity >= 1)'
         if body.count(old) != 1:
             raise ValueError('Pickup_Nuke: expected unique one-unit cap')
-        return body.replace(old, 'if (quantity >= 3)')
+        return body.replace(old, f'if (quantity >= {POWERUP_STACK_LIMIT})')
 
     def change_doppleganger(body):
         old = 'if (quantity >= 1) // FIXME - apply max to dopplegangers'
         if body.count(old) != 1:
             raise ValueError('Pickup_Doppleganger: expected unique one-unit cap')
-        return body.replace(old, 'if (quantity >= 3) // custom inventory capacity')
+        return body.replace(old, f'if (quantity >= {POWERUP_STACK_LIMIT}) // custom inventory capacity')
 
     def change_sphere(body):
         old = ('if ((skill->integer == 1 && quantity >= 2) || '
@@ -558,7 +558,7 @@ def edit_rogue_powerup_stack(src):
         if body.count(old) != 1:
             raise ValueError('Pickup_Sphere: expected official stock skill caps')
         # Do not remove the restriction on carrying a second active sphere.
-        return body.replace(old, 'if (quantity >= 3)')
+        return body.replace(old, f'if (quantity >= {POWERUP_STACK_LIMIT})')
 
     src = edit_function(src, 'Pickup_Nuke', 'bool', change_nuke)
     src = edit_function(src, 'Pickup_Doppleganger', 'bool', change_doppleganger)
