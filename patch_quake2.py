@@ -521,18 +521,31 @@ POWERUP_STACK_LIMIT = 3
 def edit_powerup_stack(src, edition):
     """Raise standard consumable-powerup carry limit to three per type."""
     def transform(body):
+        skill_var = 'skill->integer' if edition == 'remaster' else 'skill->value'
         if edition == 'remaster':
-            old = ('if ((skill->integer == 0 && quantity >= 3) ||\n'
-                   '\t\t(skill->integer == 1 && quantity >= 2) ||\n'
-                   '\t\t(skill->integer >= 2 && quantity >= 1))')
+            # Stock remaster: Easy=3, Normal=2, Hard/Nightmare=1.
+            # Match tokens, not indentation (official code uses tabs,
+            # whereas regression fixtures and forks may use spaces).
+            stock = (
+                rf'if\s*\(\s*\(\s*{skill_var}\s*==\s*0\s*&&\s*quantity\s*>=\s*3\s*\)'
+                rf'\s*\|\|\s*\(\s*{skill_var}\s*==\s*1\s*&&\s*quantity\s*>=\s*2\s*\)'
+                rf'\s*\|\|\s*\(\s*{skill_var}\s*>=\s*2\s*&&\s*quantity\s*>=\s*1\s*\)\s*\)'
+            )
         else:
-            old = ('if ((skill->value == 1 && quantity >= 2) || '
-                   '(skill->value >= 2 && quantity >= 1))')
-        if body.count(old) != 1:
-            raise ValueError('Pickup_Powerup: expected official stock skill caps')
-        # Shared-coop item uniqueness remains intact: this changes capacity,
-        # not the rule against repeatedly taking a unique shared-world item.
-        return body.replace(old, f'if (quantity >= {POWERUP_STACK_LIMIT})')
+            # Stock classic: Normal=2, Hard/Nightmare=1; Easy unlimited.
+            stock = (
+                rf'if\s*\(\s*\(\s*{skill_var}\s*==\s*1\s*&&\s*quantity\s*>=\s*2\s*\)'
+                rf'\s*\|\|\s*\(\s*{skill_var}\s*>=\s*2\s*&&\s*quantity\s*>=\s*1\s*\)\s*\)'
+            )
+        matches = list(re.finditer(stock, body))
+        if len(matches) != 1:
+            raise ValueError(
+                f'Pickup_Powerup: expected one stock skill-cap expression, found {len(matches)}')
+        # Keep the shared-coop item-uniqueness rule unchanged.
+        match = matches[0]
+        return (body[:match.start()] +
+                f'if (quantity >= {POWERUP_STACK_LIMIT})' +
+                body[match.end():])
     return edit_function(src, 'Pickup_Powerup',
                          'bool' if edition == 'remaster' else 'qboolean',
                          transform)
