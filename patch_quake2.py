@@ -512,19 +512,75 @@ def edit_grenade_splash(src, edition):
                          transform)
 
 
+# Carry up to three units of each usable powerup, independent of skill.
+# This deliberately does not alter quest keys, permanent bonuses, or
+# single-instance toggle equipment (e.g. flashlight/compass).
+POWERUP_STACK_LIMIT = 3
+
+
+def edit_powerup_stack(src, edition):
+    """Raise standard consumable-powerup carry limit to three per type."""
+    def transform(body):
+        if edition == 'remaster':
+            old = ('if ((skill->integer == 0 && quantity >= 3) ||\n'
+                   '\t\t(skill->integer == 1 && quantity >= 2) ||\n'
+                   '\t\t(skill->integer >= 2 && quantity >= 1))')
+        else:
+            old = ('if ((skill->value == 1 && quantity >= 2) || '
+                   '(skill->value >= 2 && quantity >= 1))')
+        if body.count(old) != 1:
+            raise ValueError('Pickup_Powerup: expected official stock skill caps')
+        # Shared-coop item uniqueness remains intact: this changes capacity,
+        # not the rule against repeatedly taking a unique shared-world item.
+        return body.replace(old, 'if (quantity >= 3)')
+    return edit_function(src, 'Pickup_Powerup',
+                         'bool' if edition == 'remaster' else 'qboolean',
+                         transform)
+
+
+def edit_rogue_powerup_stack(src):
+    """Apply the same three-unit cap to Rogue expansion consumables."""
+    def change_nuke(body):
+        old = 'if (quantity >= 1)'
+        if body.count(old) != 1:
+            raise ValueError('Pickup_Nuke: expected unique one-unit cap')
+        return body.replace(old, 'if (quantity >= 3)')
+
+    def change_doppleganger(body):
+        old = 'if (quantity >= 1) // FIXME - apply max to dopplegangers'
+        if body.count(old) != 1:
+            raise ValueError('Pickup_Doppleganger: expected unique one-unit cap')
+        return body.replace(old, 'if (quantity >= 3) // custom inventory capacity')
+
+    def change_sphere(body):
+        old = ('if ((skill->integer == 1 && quantity >= 2) || '
+               '(skill->integer >= 2 && quantity >= 1))')
+        if body.count(old) != 1:
+            raise ValueError('Pickup_Sphere: expected official stock skill caps')
+        # Do not remove the restriction on carrying a second active sphere.
+        return body.replace(old, 'if (quantity >= 3)')
+
+    src = edit_function(src, 'Pickup_Nuke', 'bool', change_nuke)
+    src = edit_function(src, 'Pickup_Doppleganger', 'bool', change_doppleganger)
+    src = edit_function(src, 'Pickup_Sphere', 'bool', change_sphere)
+    return src
+
+
 def patch_sources(originals, edition):
-    expected = 5 if edition == 'remaster' else 4
+    expected = 6 if edition == 'remaster' else 4
     if len(originals) != expected:
         raise ValueError(f'{edition}: expected {expected} source files, got {len(originals)}')
     patched = [
         edit_initial(originals[0], edition),
         edit_megahealth_think(
-            edit_armor(edit_upgrades(originals[1], edition), edition), edition),
+            edit_armor(edit_upgrades(edit_powerup_stack(originals[1], edition), edition), edition), edition),
         edit_machinegun_fire_rate(edit_weapon(originals[2], edition), edition),
     ]
     if edition == 'remaster':
         patched.append(edit_megahealth_player(originals[3]))
-    patched.append(edit_grenade_splash(originals[-1], edition))
+    patched.append(edit_grenade_splash(originals[4 if edition == 'remaster' else 3], edition))
+    if edition == 'remaster':
+        patched.append(edit_rogue_powerup_stack(originals[5]))
     return patched
 
 
@@ -544,6 +600,8 @@ def main(argv=None):
         names += ('p_view',)
     names += ('g_weapon',)
     paths = [root / (name + ext) for name in names]
+    if args.edition == 'remaster':
+        paths.append(root / 'rogue' / 'g_rogue_items.cpp')
     for path in paths:
         if not path.is_file():
             parser.error(f'Source not found: {path}')
