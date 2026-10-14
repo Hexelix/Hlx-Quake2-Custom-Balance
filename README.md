@@ -20,6 +20,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Machinegun bullet spread: **50% of stock**, horizontally and vertically. Chaingun spread and machinegun recoil remain unchanged.
 - Hand grenade and Grenade Launcher: **+50% splash damage**, **+100% explosion radius** (double the original radius); direct-contact damage unchanged.
 - Rocket Launcher: **+75% direct-impact damage**; rocket splash damage and radius unchanged.
+- Railgun: **+50% direct damage** (2023 remaster: 125 → 187–188 in single-player, 100 → 150 in deathmatch; classic: 150 → 225 in single-player, 100 → 150 in deathmatch). Damage with fractional results uses unbiased random rounding; recoil, penetration, and ammo use stay unchanged.
 - Jacket Armor: **50** instead of 25.
 - Combat Armor: **100** instead of 50.
 - Body Armor: **200** instead of 100.
