@@ -228,7 +228,9 @@ def edit_weapon(src, edition):
     if len(ms) != 1:
         raise ValueError('Could not locate RocketLauncher_Fire definition to insert damage helper')
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
-    return edit_explosive_weapons(edit_machinegun_spread(src), edition)
+    src = edit_machinegun_spread(src)
+    src = edit_railgun_damage(src, edition)
+    return edit_explosive_weapons(src, edition)
 
 
 def edit_megahealth_think(src, edition):
@@ -266,6 +268,27 @@ def edit_megahealth_player(src):
             '    ent->client->pers.megahealth_time = 0_ms;',
             '}'))
     return edit_function(src, 'P_RunMegaHealth', 'void', transform)
+
+
+def edit_railgun_damage(src, edition):
+    """Increase player Railgun damage by 50%, without changing knockback."""
+    def transform(body):
+        standard = 125 if edition == 'remaster' else 150
+        for stock in (100, standard):
+            matches = list(re.finditer(
+                rf'\bdamage\s*=\s*{stock}\s*;', body))
+            if len(matches) != 1:
+                raise ValueError(
+                    f'weapon_railgun_fire: expected one stock damage={stock}, got {len(matches)}')
+        # Apply the bonus to the selected SP/DM damage value, before Quad Damage.
+        match = list(re.finditer(r'\bif\s*\(is_quad\)', body))
+        if len(match) != 1:
+            raise ValueError('weapon_railgun_fire: Quad Damage block not found uniquely')
+        m = match[0]
+        return (body[:m.start()] +
+                'damage = Q2ModScaleDamage(damage, 50);\n\t' +
+                body[m.start():])
+    return edit_function(src, 'weapon_railgun_fire', 'void', transform)
 
 
 def edit_explosive_weapons(src, edition):
