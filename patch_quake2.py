@@ -419,8 +419,9 @@ def edit_semiauto_shotgun(src, edition):
         # Remaster fires at frame 8 upon leaving READY. Classic performs its
         # first shot on frame 8 when FIRING, so don't skip until frame 9.
         first_completed_frame = 8 if edition == 'remaster' else 9
-        buffer = (' || ent->client->weapon_fire_buffered'
-                  if edition == 'remaster' else '')
+        buffer_guard = (' &&\n' + '    !ent->client->weapon_fire_buffered'
+                        if edition == 'remaster' else '')
+        button_decl = ('button_t' if edition == 'remaster' else 'int')
         generic = (
             'Weapon_Generic(ent, 7, 18, 36, 39, pause_frames, fire_frames, '
             'weapon_shotgun_fire);' if edition == 'remaster' else
@@ -434,9 +435,10 @@ def edit_semiauto_shotgun(src, edition):
             + indent + '    ent->client->ps.gunframe < 17)\n'
             + indent + '    ent->client->ps.gunframe = 17;\n\n'
             + indent + '// Require a fresh press; do not treat a held trigger as autofire.\n'
-            + indent + 'int old_buttons = ent->client->buttons;\n'
+            + indent + f'{button_decl} old_buttons = ent->client->buttons;\n'
             + indent + 'if (ent->client->weaponstate == WEAPON_READY &&\n'
-            + indent + f'    !(ent->client->latched_buttons & BUTTON_ATTACK){buffer})\n'
+            + indent + '    !(ent->client->latched_buttons & BUTTON_ATTACK)'
+            + buffer_guard + ')\n'
             + indent + '    ent->client->buttons &= ~BUTTON_ATTACK;\n'
             + indent + generic + '\n'
             + indent + 'ent->client->buttons = old_buttons;')
