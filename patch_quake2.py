@@ -230,6 +230,7 @@ def edit_weapon(src, edition):
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
     src = edit_machinegun_spread(src)
     src = edit_chaingun_spin(src, edition)
+    src = edit_semiauto_shotgun(src, edition)
     src = edit_railgun_damage(src, edition)
     return edit_explosive_weapons(src, edition)
 
@@ -361,6 +362,88 @@ def edit_chaingun_spin(src, edition):
     return src
 
 
+def edit_machinegun_fire_rate(src, edition):
+    """Increase only the player's Machinegun cadence by about 40%."""
+    if edition == 'remaster':
+        def change_timer(body):
+            marker = '// network optimization...'
+            if body.count(marker) != 1 or 'ent->client->ps.gunrate = 10;' not in body:
+                raise ValueError('Weapon_AnimationTime: expected stock rate logic')
+            # This scales base and haste/quadfire rates consistently. The
+            # renderer receives the matching gunrate for faster animation.
+            addition = (
+                '// Custom Machinegun: 10 Hz -> 14 Hz while firing.\n'
+                '\tif (ent->client->weaponstate == WEAPON_FIRING &&\n'
+                '\t\tent->client->pers.weapon &&\n'
+                '\t\tent->client->pers.weapon->id == IT_WEAPON_MACHINEGUN)\n'
+                '\t\tent->client->ps.gunrate = ent->client->ps.gunrate * 14 / 10;\n\n\t')
+            return body.replace(marker, addition + marker)
+        return edit_function(src, 'Weapon_AnimationTime', 'gtime_t',
+                             change_timer)
+
+    # The classic game DLL has a fixed 10-Hz animation tick. Add a second
+    # regular bullet on two of every five firing ticks to approximate 14 Hz.
+    # Reusing Machinegun_Fire preserves damage, spread and ammo usage.
+    def change_classic(body):
+        pattern = (r'(?P<indent>^[ \t]*)Weapon_Generic\s*\(\s*ent\s*,\s*'
+                   r'3\s*,\s*5\s*,\s*45\s*,\s*49\s*,\s*pause_frames\s*,\s*'
+                   r'fire_frames\s*,\s*Machinegun_Fire\s*\);')
+        matches = list(re.finditer(pattern, body, re.MULTILINE))
+        if len(matches) != 1:
+            raise ValueError('Weapon_Machinegun: stock classic call not found')
+        m = matches[0]
+        indent = m.group('indent')
+        replacement = (
+            indent + 'qboolean was_firing = (ent->client->weaponstate == WEAPON_FIRING);\n'
+            + indent + 'Weapon_Generic (ent, 3, 5, 45, 49, pause_frames, fire_frames, Machinegun_Fire);\n'
+            + indent + 'if (was_firing && ent->client->weaponstate == WEAPON_FIRING &&\n'
+            + indent + '    (ent->client->buttons & BUTTON_ATTACK) &&\n'
+            + indent + '    (level.framenum % 5) < 2 &&\n'
+            + indent + '    ent->client->pers.inventory[ent->client->ammo_index] > 0)\n'
+            + indent + '    Machinegun_Fire(ent);')
+        return body[:m.start()] + replacement + body[m.end():]
+    return edit_function(src, 'Weapon_Machinegun', 'void', change_classic)
+
+
+def edit_semiauto_shotgun(src, edition):
+    """Shorten the pump cycle but require a fresh trigger press per shot."""
+    def transform(body):
+        pattern = (r'(?P<indent>^[ \t]*)Weapon_Generic\s*\(\s*ent\s*,\s*'
+                   r'7\s*,\s*18\s*,\s*36\s*,\s*39\s*,\s*pause_frames\s*,\s*'
+                   r'fire_frames\s*,\s*weapon_shotgun_fire\s*\);')
+        matches = list(re.finditer(pattern, body, re.MULTILINE))
+        if len(matches) != 1:
+            raise ValueError('Weapon_Shotgun: stock firing wrapper not found')
+        m = matches[0]
+        indent = m.group('indent')
+        # Remaster fires at frame 8 upon leaving READY. Classic performs its
+        # first shot on frame 8 when FIRING, so don't skip until frame 9.
+        first_completed_frame = 8 if edition == 'remaster' else 9
+        buffer = (' || ent->client->weapon_fire_buffered'
+                  if edition == 'remaster' else '')
+        generic = (
+            'Weapon_Generic(ent, 7, 18, 36, 39, pause_frames, fire_frames, '
+            'weapon_shotgun_fire);' if edition == 'remaster' else
+            'Weapon_Generic (ent, 7, 18, 36, 39, pause_frames, fire_frames, '
+            'weapon_shotgun_fire);'
+        )
+        replacement = (
+            indent + '// Jump over the pump animation after the shell has fired.\n'
+            + indent + 'if (ent->client->weaponstate == WEAPON_FIRING &&\n'
+            + indent + f'    ent->client->ps.gunframe >= {first_completed_frame} &&\n'
+            + indent + '    ent->client->ps.gunframe < 17)\n'
+            + indent + '    ent->client->ps.gunframe = 17;\n\n'
+            + indent + '// Require a fresh press; do not treat a held trigger as autofire.\n'
+            + indent + 'int old_buttons = ent->client->buttons;\n'
+            + indent + 'if (ent->client->weaponstate == WEAPON_READY &&\n'
+            + indent + f'    !(ent->client->latched_buttons & BUTTON_ATTACK){buffer})\n'
+            + indent + '    ent->client->buttons &= ~BUTTON_ATTACK;\n'
+            + indent + generic + '\n'
+            + indent + 'ent->client->buttons = old_buttons;')
+        return body[:m.start()] + replacement + body[m.end():]
+    return edit_function(src, 'Weapon_Shotgun', 'void', transform)
+
+
 def edit_railgun_damage(src, edition):
     """Increase player Railgun damage by 50%, without changing knockback."""
     def transform(body):
@@ -435,7 +518,7 @@ def patch_sources(originals, edition):
         edit_initial(originals[0], edition),
         edit_megahealth_think(
             edit_armor(edit_upgrades(originals[1], edition), edition), edition),
-        edit_weapon(originals[2], edition),
+        edit_machinegun_fire_rate(edit_weapon(originals[2], edition), edition),
     ]
     if edition == 'remaster':
         patched.append(edit_megahealth_player(originals[3]))
