@@ -21,6 +21,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Machinegun fire rate: **approximately 140% of stock**, about 14 rounds per second instead of 10. The remaster accelerates its firing animation and fire cadence together; classic code adds a second bullet on two out of five firing ticks. Each additional bullet consumes its own ammunition.
 - Basic Shotgun: **semi-automatic**. The long pump sequence is skipped, leaving a short recovery before the next shot. Each shot requires a new press of the fire button; holding the trigger does not fire continuously. The Super Shotgun is unchanged.
 - Chaingun: **approximately half the spin-up and spin-down duration**, with a **1 → 2 → 3 → 4 → 5 bullet** ramp (up from the original 1 → 2 → 3). At full speed it fires **five bullets per firing step** and consumes up to five bullets of ammo per step. The existing sound assets are unchanged; muzzleflashes use the available maximum three-bullet visual variant for four- and five-bullet steps.
+- **Consumable inventory items: maximum 3 of each type**, regardless of difficulty. Includes Quad Damage, Invulnerability, Rebreather, Environment Suit, Silencer, Double Damage, IR Goggles, Adrenaline, Rogue spheres, Nuke, and Doppleganger (where the mode offers them). The existing single-active-sphere rule and shared-co-op pickup restrictions remain. Quest keys and one-instance utility equipment (flashlight and compass) are unchanged.
 - Hand grenade and Grenade Launcher: **+50% splash damage**, **+100% explosion radius** (double the original radius); direct-contact damage unchanged.
 - Rocket Launcher: **+75% direct-impact damage**; rocket splash damage and radius unchanged.
 - Railgun: **+50% direct damage** (2023 remaster: 125 → 187–188 in single-player, 100 → 150 in deathmatch; classic: 150 → 225 in single-player, 100 → 150 in deathmatch). Damage with fractional results uses unbiased random rounding; recoil, penetration, and ammo use stay unchanged.
@@ -64,7 +65,7 @@ If the writable Saved Games location is different on your system, locate the gam
 
 3. Build the game DLL with a Windows-compatible toolchain as described in the SDK documentation.
 
-You can also preview all changes with `--dry-run`. The patcher automatically makes `*.balance-original.bak` backups of the edited source files (`p_client`, `g_items`, `p_weapon`, `g_weapon`, and remaster-only `p_view`). Apply only to **pristine official source**; it refuses already-patched files.
+You can also preview all changes with `--dry-run`. The patcher automatically makes `*.balance-original.bak` backups of the edited source files (`p_client`, `g_items`, `p_weapon`, `g_weapon`, and remaster-only `p_view` and `rogue/g_rogue_items.cpp`). Apply only to **pristine official source**; it refuses already-patched files.
 
 To patch a classic Quake II source checkout, use `--edition classic`. The 2023 DLL is not compatible with classic-engine mods and vice versa.
 
