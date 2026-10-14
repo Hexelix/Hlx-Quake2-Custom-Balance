@@ -18,6 +18,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Shotgun, Super Shotgun, Machinegun, Chaingun: **+20% damage**.
 - Blaster and HyperBlaster: **+50% damage**.
 - Machinegun bullet spread: **50% of stock**, horizontally and vertically. Chaingun spread and machinegun recoil remain unchanged.
+- Chaingun: **approximately half the spin-up and spin-down duration**, with a **1 → 2 → 3 → 4 → 5 bullet** ramp (up from the original 1 → 2 → 3). At full speed it fires **five bullets per firing step** and consumes up to five bullets of ammo per step. The existing sound assets are unchanged; muzzleflashes use the available maximum three-bullet visual variant for four- and five-bullet steps.
 - Hand grenade and Grenade Launcher: **+50% splash damage**, **+100% explosion radius** (double the original radius); direct-contact damage unchanged.
 - Rocket Launcher: **+75% direct-impact damage**; rocket splash damage and radius unchanged.
 - Railgun: **+50% direct damage** (2023 remaster: 125 → 187–188 in single-player, 100 → 150 in deathmatch; classic: 150 → 225 in single-player, 100 → 150 in deathmatch). Damage with fractional results uses unbiased random rounding; recoil, penetration, and ammo use stay unchanged.
@@ -26,7 +27,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Body Armor: **200** instead of 100.
 - Armor shards: **5** instead of 2.
 - Armor protection types and armor maximums (Jacket 50, Combat 100, Body 200) are unchanged. Armor conversion/salvaging works with the increased pickup quantities.
-- Weapon damage uses unbiased random rounding to preserve the exact requested damage multiplier on average. Fire rate, ammunition consumption, weapon knockback, pellet count, and enemy damage are unchanged.
+- Damage multipliers use unbiased random rounding to preserve the requested average damage. Other than the Chaingun's expressly increased bullet count/ammo consumption and shortened spin timings, the mod does not change weapon firing-step frequency, weapon knockback, shotgun pellet count, or enemy weapon damage.
 - **Mega Health no longer decays** after pickup: overhealth stays until lost to damage or other gameplay effects. Applies to single-player and multiplayer; multiplayer Mega Health still respawns. Existing remaster saves with a Mega Health countdown have their timer cleared when play resumes.
 - Expansion-only ammo types remain stock.
 
