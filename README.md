@@ -18,6 +18,8 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Shotgun, Super Shotgun, Machinegun, Chaingun: **+20% damage**.
 - Blaster and HyperBlaster: **+50% damage**.
 - Machinegun bullet spread: **50% of stock**, horizontally and vertically. Chaingun spread and machinegun recoil remain unchanged.
+- Machinegun fire rate: **approximately 140% of stock**, about 14 rounds per second instead of 10. The remaster accelerates its firing animation and fire cadence together; classic code adds a second bullet on two out of five firing ticks. Each additional bullet consumes its own ammunition.
+- Basic Shotgun: **semi-automatic**. The long pump sequence is skipped, leaving a short recovery before the next shot. Each shot requires a new press of the fire button; holding the trigger does not fire continuously. The Super Shotgun is unchanged.
 - Chaingun: **approximately half the spin-up and spin-down duration**, with a **1 → 2 → 3 → 4 → 5 bullet** ramp (up from the original 1 → 2 → 3). At full speed it fires **five bullets per firing step** and consumes up to five bullets of ammo per step. The existing sound assets are unchanged; muzzleflashes use the available maximum three-bullet visual variant for four- and five-bullet steps.
 - Hand grenade and Grenade Launcher: **+50% splash damage**, **+100% explosion radius** (double the original radius); direct-contact damage unchanged.
 - Rocket Launcher: **+75% direct-impact damage**; rocket splash damage and radius unchanged.
@@ -27,7 +29,7 @@ This modifies the game logic in the [official Quake II 2023 remaster SDK](https:
 - Body Armor: **200** instead of 100.
 - Armor shards: **5** instead of 2.
 - Armor protection types and armor maximums (Jacket 50, Combat 100, Body 200) are unchanged. Armor conversion/salvaging works with the increased pickup quantities.
-- Damage multipliers use unbiased random rounding to preserve the requested average damage. Other than the Chaingun's expressly increased bullet count/ammo consumption and shortened spin timings, the mod does not change weapon firing-step frequency, weapon knockback, shotgun pellet count, or enemy weapon damage.
+- Damage multipliers use unbiased random rounding to preserve the requested average damage. Aside from the expressly faster Machinegun cadence, five-round Chaingun bursts, and semi-automatic Shotgun cycle, the mod does not change other weapons' firing timing, knockback, shotgun pellet count, or enemy weapon damage.
 - **Mega Health no longer decays** after pickup: overhealth stays until lost to damage or other gameplay effects. Applies to single-player and multiplayer; multiplayer Mega Health still respawns. Existing remaster saves with a Mega Health countdown have their timer cleared when play resumes.
 - Expansion-only ammo types remain stock.
 
