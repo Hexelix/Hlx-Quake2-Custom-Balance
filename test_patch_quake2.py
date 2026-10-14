@@ -137,6 +137,60 @@ def fixture_upgrade(edition):
     return output + fixture_megahealth(edition) + fixture_armor(edition)
 
 
+def fixture_chaingun(edition):
+    """Representative stock Chaingun firing and animation state machine."""
+    startup = (
+        'if (ent->client->ps.gunframe > 31) { '
+        'ent->client->ps.gunframe = 5; '
+        'gi.sound(ent, CHAN_AUTO, gi.soundindex("weapons/chngnu1a.wav"), 1, ATTN_IDLE, 0); }'
+        if edition == 'remaster' else
+        'if (ent->client->ps.gunframe == 5) '
+        'gi.sound(ent, CHAN_AUTO, gi.soundindex("weapons/chngnu1a.wav"), 1, ATTN_IDLE, 0);'
+    )
+    wrapper = (
+        'Weapon_Repeating(ent, 4, 31, 61, 64, pause_frames, Chaingun_Fire);'
+        if edition == 'remaster' else
+        'Weapon_Generic (ent, 4, 31, 61, 64, pause_frames, fire_frames, Chaingun_Fire);'
+    )
+    return ('void Chaingun_Fire(edict_t *ent) {\n'
+            ' int damage;\n'
+            ' if (deathmatch->value) damage = 6; else damage = 8;\n'
+            f' {startup}\n'
+            ' else if ((ent->client->ps.gunframe == 14) && '
+            '!(ent->client->buttons & BUTTON_ATTACK)) {\n'
+            '  ent->client->ps.gunframe = 32;\n'
+            '  ent->client->weapon_sound = 0;\n'
+            '  return;\n'
+            ' } else if ((ent->client->ps.gunframe == 21) && '
+            '(ent->client->buttons & BUTTON_ATTACK)) {\n'
+            '  ent->client->ps.gunframe = 15;\n'
+            ' } else {\n'
+            '  ent->client->ps.gunframe++;\n'
+            ' }\n'
+            ' if (ent->client->ps.gunframe == 22) {\n'
+            '  ent->client->weapon_sound = 0;\n'
+            '  gi.sound(ent, CHAN_AUTO, gi.soundindex("weapons/chngnd1a.wav"), 1, ATTN_IDLE, 0);\n'
+            ' }\n'
+            ' if (ent->client->ps.gunframe <= 9)\n'
+            '  shots = 1;\n'
+            ' else if (ent->client->ps.gunframe <= 14) {\n'
+            '  if (ent->client->buttons & BUTTON_ATTACK)\n'
+            '   shots = 2;\n'
+            '  else\n'
+            '   shots = 1;\n'
+            ' } else\n'
+            '  shots = 3;\n'
+            ' if (ent->client->pers.inventory[ent->client->ammo_index] < shots)\n'
+            '  shots = ent->client->pers.inventory[ent->client->ammo_index];\n'
+            ' for (i = 0; i < shots; i++) fire_bullet(ent, damage);\n'
+            ' gi.WriteByte((MZ_CHAINGUN1 + shots - 1) | is_silenced);\n'
+            ' ent->client->pers.inventory[ent->client->ammo_index] -= shots;\n'
+            '}\n'
+            'void Weapon_Chaingun(edict_t *ent) {\n'
+            f' {wrapper}\n'
+            '}\n')
+
+
 def fixture_weapon(edition):
     if edition == 'remaster':
         blaster = 'int damage = 15;'
@@ -147,7 +201,7 @@ def fixture_weapon(edition):
         f'void Weapon_Blaster_Fire(edict_t *ent) {{ {blaster} }}',
         'void Weapon_HyperBlaster_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 15; else damage = 20; }',
         'void Machinegun_Fire(edict_t *ent) { int damage = 8; int kick = 2; fire_bullet(ent, start, dir, damage, kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_MACHINEGUN); }',
-        'void Chaingun_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 6; else damage = 8; }',
+        fixture_chaingun(edition),
         'void weapon_shotgun_fire(edict_t *ent) { int damage = 4; int kick = 8; }',
         'void weapon_supershotgun_fire(edict_t *ent) { int damage = 6; int kick = 12; }',
         'void weapon_grenade_fire(edict_t *ent, bool held) { int damage = 125; float radius; radius = (float) (damage + 40); }' if edition == 'remaster' else
@@ -216,6 +270,27 @@ class PatcherTests(unittest.TestCase):
                                 new_weapon.index('void Weapon_RocketLauncher_Fire'))
                 self.assertLess(new_weapon.index('static int Q2ModScaleDamage'),
                                 new_weapon.index('damage = Q2ModScaleDamage(damage, 75);'))
+                # Chaingun's accelerated animation must reach 5 bullets/step.
+                self.assertIn('if ((frame >= 5 && frame < 14)', new_weapon)
+                self.assertIn('frame >= 15 && frame < 21 && !(ent->client->buttons & BUTTON_ATTACK)', new_weapon)
+                self.assertIn('frame >= 22 && frame < 31', new_weapon)
+                self.assertIn('ent->client->ps.gunframe += 2;', new_weapon)
+                self.assertIn('ent->client->ps.gunframe <= 7', new_weapon)
+                self.assertIn('ent->client->ps.gunframe <= 9', new_weapon)
+                self.assertIn('ent->client->ps.gunframe <= 11', new_weapon)
+                self.assertIn('ent->client->ps.gunframe <= 13', new_weapon)
+                self.assertIn('shots = 4;', new_weapon)
+                self.assertIn('shots = 5;', new_weapon)
+                self.assertIn('MZ_CHAINGUN1 + (shots > 3 ? 3 : shots) - 1', new_weapon)
+                self.assertNotIn('MZ_CHAINGUN1 + shots - 1', new_weapon)
+                self.assertIn('gi.sound(ent, CHAN_AUTO, gi.soundindex("weapons/chngnd1a.wav")', new_weapon)
+                self.assertIn('inventory[ent->client->ammo_index] -= shots;', new_weapon)
+                if edition == 'classic':
+                    self.assertIn('ent->client->weaponstate == WEAPON_FIRING &&', new_weapon)
+                    self.assertIn('ent->client->ps.gunframe >= 22 &&', new_weapon)
+                    self.assertIn('ent->client->ps.gunframe <= 30)', new_weapon)
+                else:
+                    self.assertIn('Weapon_Repeating(ent, 4, 31, 61, 64, pause_frames, Chaingun_Fire)', new_weapon)
                 self.assertIn('(DEFAULT_BULLET_HSPREAD / 2), (DEFAULT_BULLET_VSPREAD / 2), MOD_MACHINEGUN', new_weapon)
                 self.assertNotIn('kick, DEFAULT_BULLET_HSPREAD, DEFAULT_BULLET_VSPREAD, MOD_MACHINEGUN', new_weapon)
                 self.assertNotIn('self->owner->health -= 1;', new_items)
