@@ -229,6 +229,7 @@ def edit_weapon(src, edition):
         raise ValueError('Could not locate RocketLauncher_Fire definition to insert damage helper')
     src = src[:ms[0].start()] + helper + src[ms[0].start():]
     src = edit_machinegun_spread(src)
+    src = edit_chaingun_spin(src, edition)
     src = edit_railgun_damage(src, edition)
     return edit_explosive_weapons(src, edition)
 
@@ -268,6 +269,96 @@ def edit_megahealth_player(src):
             '    ent->client->pers.megahealth_time = 0_ms;',
             '}'))
     return edit_function(src, 'P_RunMegaHealth', 'void', transform)
+
+
+def edit_chaingun_spin(src, edition):
+    """Halve Chaingun spin-up/down and ramp to five bullets per firing step.
+
+    The SDK exposes only three Chaingun muzzleflash variants; cap the visual
+    muzzleflash at the third variant without capping actual bullets/ammo.
+    """
+    def replace_unique(body, pattern, replacement, label):
+        matches = list(re.finditer(pattern, body, re.MULTILINE))
+        if len(matches) != 1:
+            raise ValueError(f'Chaingun_Fire {label}: expected 1 match, got {len(matches)}')
+        match = matches[0]
+        return body[:match.start()] + replacement + body[match.end():]
+
+    def transform(body):
+        # Skipping every other spin-up frame means the old frame-14 release
+        # check can be bypassed. Accept any early spin-up frame instead.
+        body = replace_unique(
+            body,
+            r'\(\(ent->client->ps\.gunframe == 14\)\s*&&\s*!\(ent->client->buttons & BUTTON_ATTACK\)\)',
+            '(ent->client->ps.gunframe >= 5 && ent->client->ps.gunframe <= 14 && '
+            '!(ent->client->buttons & BUTTON_ATTACK))',
+            'early-release check')
+
+        # Halve the number of firing updates to reach full speed. On trigger
+        # release, also pass through the final firing frames twice as fast.
+        # After the wind-down sound starts at frame 22, skip alternate frames.
+        body = replace_unique(
+            body,
+            r'(?P<indent>^[ \t]*)ent->client->ps\.gunframe\+\+;',
+            '\t\tconst int frame = ent->client->ps.gunframe;\n'
+            '\t\tif ((frame >= 5 && frame < 14) ||\n'
+            '\t\t\t(frame >= 15 && frame < 21 && !(ent->client->buttons & BUTTON_ATTACK)) ||\n'
+            '\t\t\t(frame >= 22 && frame < 31))\n'
+            '\t\t\tent->client->ps.gunframe += 2;\n'
+            '\t\telse\n'
+            '\t\t\tent->client->ps.gunframe++;',
+            'animation advance')
+
+        # 5,7,9,11,13,15 is the accelerated ramp sequence.
+        body = replace_unique(
+            body,
+            r'if\s*\(ent->client->ps\.gunframe <= 9\)\s*shots = 1;\s*'
+            r'else if\s*\(ent->client->ps\.gunframe <= 14\)\s*\{\s*'
+            r'if\s*\(ent->client->buttons & BUTTON_ATTACK\)\s*shots = 2;\s*'
+            r'else\s*shots = 1;\s*\}\s*else\s*shots = 3;',
+            'if (ent->client->ps.gunframe <= 7)\n'
+            '\t\tshots = 1;\n'
+            '\telse if (ent->client->ps.gunframe <= 9)\n'
+            '\t\tshots = 2;\n'
+            '\telse if (ent->client->ps.gunframe <= 11)\n'
+            '\t\tshots = 3;\n'
+            '\telse if (ent->client->ps.gunframe <= 13)\n'
+            '\t\tshots = 4;\n'
+            '\telse\n'
+            '\t\tshots = 5;',
+            'bullets-per-step ramp')
+
+        body = replace_unique(
+            body,
+            r'MZ_CHAINGUN1 \+ shots - 1',
+            'MZ_CHAINGUN1 + (shots > 3 ? 3 : shots) - 1',
+            'muzzleflash index')
+        return body
+
+    src = edit_function(src, 'Chaingun_Fire', 'void', transform)
+
+    if edition == 'classic':
+        # Classic Weapon_Generic(), unlike the remaster Weapon_Repeating(),
+        # advances frames 22-31 itself and stops calling Chaingun_Fire there.
+        # Accelerate that non-firing portion in this Chaingun-only wrapper.
+        def accelerate_classic_winddown(body):
+            pattern = (r'(?P<indent>^[ \t]*)Weapon_Generic\s*\(\s*ent\s*,\s*'
+                       r'4\s*,\s*31\s*,\s*61\s*,\s*64\s*,\s*'
+                       r'pause_frames\s*,\s*fire_frames\s*,\s*Chaingun_Fire\s*\);')
+            matches = list(re.finditer(pattern, body, re.MULTILINE))
+            if len(matches) != 1:
+                raise ValueError('Weapon_Chaingun: stock classic wrapper not found')
+            m = matches[0]
+            indent = m.group('indent')
+            boost = (
+                indent + 'if (ent->client->weaponstate == WEAPON_FIRING &&\n'
+                + indent + '    ent->client->ps.gunframe >= 22 &&\n'
+                + indent + '    ent->client->ps.gunframe <= 30)\n'
+                + indent + '    ent->client->ps.gunframe++;\n\n')
+            return body[:m.start()] + boost + body[m.start():]
+        src = edit_function(src, 'Weapon_Chaingun', 'void',
+                            accelerate_classic_winddown)
+    return src
 
 
 def edit_railgun_damage(src, edition):
