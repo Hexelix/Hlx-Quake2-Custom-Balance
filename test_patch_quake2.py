@@ -156,7 +156,19 @@ def fixture_weapon(edition):
         'void weapon_grenadelauncher_fire(edict_t *ent) { int damage = 120; float radius; radius = damage+40; }',
         'void Weapon_RocketLauncher_Fire(edict_t *ent) { int damage; damage = irandom(100, 120); int radius_damage = 120; }' if edition == 'remaster' else
         'void Weapon_RocketLauncher_Fire(edict_t *ent) { int damage; damage = 100 + (int)(random() * 20.0); int radius_damage = 120; }',
-        'void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }',
+        ('void weapon_railgun_fire(edict_t *ent) { '
+         'int damage, kick; '
+         'if (deathmatch->integer) { damage = 100; kick = 200; } '
+         'else { damage = 125; kick = 225; } '
+         'if (is_quad) { damage *= damage_multiplier; kick *= damage_multiplier; } '
+         'fire_rail(ent, start, dir, damage, kick); }'
+         if edition == 'remaster' else
+         'void weapon_railgun_fire(edict_t *ent) { '
+         'int damage, kick; '
+         'if (deathmatch->value) { damage = 100; kick = 200; } '
+         'else { damage = 150; kick = 250; } '
+         'if (is_quad) { damage *= 4; kick *= 4; } '
+         'fire_rail(ent, start, dir, damage, kick); }'),
     ])
 
 
@@ -188,7 +200,16 @@ class PatcherTests(unittest.TestCase):
                 self.assertIn('inventory[old_armor_index] += 5;', new_items)
                 for source_damage, percent in ((4, 20), (6, 20), (8, 20), (15, 50), (20, 50), (6, 20), (15, 50)):
                     self.assertIn(f'Q2ModScaleDamage({source_damage}, {percent})', new_weapon)
-                self.assertIn('void Weapon_Railgun_Fire(edict_t *ent) { int damage = 100; }', new_weapon)
+                self.assertEqual(new_weapon.count('damage = Q2ModScaleDamage(damage, 50);'), 1)
+                rail_begin = new_weapon.index('void weapon_railgun_fire(')
+                self.assertLess(
+                    new_weapon.index('damage = Q2ModScaleDamage(damage, 50);', rail_begin),
+                    new_weapon.index('if (is_quad)', rail_begin))
+                self.assertIn('damage = 100;', new_weapon[rail_begin:])
+                self.assertIn('damage = ' + ('125' if edition == 'remaster' else '150') + ';', new_weapon[rail_begin:])
+                self.assertIn('fire_rail(ent, start, dir, damage, kick);', new_weapon[rail_begin:])
+                self.assertIn('kick = 200;', new_weapon[rail_begin:])
+                self.assertIn('kick = ' + ('225' if edition == 'remaster' else '250') + ';', new_weapon[rail_begin:])
                 self.assertEqual(new_weapon.count('static int Q2ModScaleDamage'), 1)
                 # Every use must follow the helper definition in the generated C++.
                 self.assertLess(new_weapon.index('static int Q2ModScaleDamage'),
