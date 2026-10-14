@@ -197,6 +197,30 @@ def fixture_weapon(edition):
     else:
         blaster = 'int damage;\n if (deathmatch->value) damage = 15; else damage = 10;'
     return '\n'.join([
+        ('gtime_t Weapon_AnimationTime(edict_t *ent) {\n'
+         ' ent->client->ps.gunrate = 10;\n'
+         ' if (is_quadfire) ent->client->ps.gunrate *= 2;\n'
+         ' // network optimization...\n'
+         ' return 100_ms;\n}' if edition == 'remaster' else ''),
+        ('void Weapon_Machinegun(edict_t *ent) {\n'
+         ' constexpr int pause_frames[] = { 23, 45, 0 };\n'
+         ' Weapon_Repeating(ent, 3, 5, 45, 49, pause_frames, Machinegun_Fire);\n'
+         '}' if edition == 'remaster' else
+         'void Weapon_Machinegun (edict_t *ent) {\n'
+         ' static int pause_frames[] = { 23, 45, 0 };\n'
+         ' static int fire_frames[] = { 4, 5, 0 };\n'
+         ' Weapon_Generic (ent, 3, 5, 45, 49, pause_frames, fire_frames, Machinegun_Fire);\n'
+         '}'),
+        ('void Weapon_Shotgun(edict_t *ent) {\n'
+         ' constexpr int pause_frames[] = { 22, 28, 34, 0 };\n'
+         ' constexpr int fire_frames[] = { 8, 0 };\n'
+         ' Weapon_Generic(ent, 7, 18, 36, 39, pause_frames, fire_frames, weapon_shotgun_fire);\n'
+         '}' if edition == 'remaster' else
+         'void Weapon_Shotgun (edict_t *ent) {\n'
+         ' static int pause_frames[] = { 22, 28, 34, 0 };\n'
+         ' static int fire_frames[] = { 8, 9, 0 };\n'
+         ' Weapon_Generic (ent, 7, 18, 36, 39, pause_frames, fire_frames, weapon_shotgun_fire);\n'
+         '}'),
         'void Blaster_Fire(edict_t *ent) { /* projectiles */ }',
         f'void Weapon_Blaster_Fire(edict_t *ent) {{ {blaster} }}',
         'void Weapon_HyperBlaster_Fire(edict_t *ent) { int damage; if (deathmatch->value) damage = 15; else damage = 20; }',
@@ -270,6 +294,34 @@ class PatcherTests(unittest.TestCase):
                                 new_weapon.index('void Weapon_RocketLauncher_Fire'))
                 self.assertLess(new_weapon.index('static int Q2ModScaleDamage'),
                                 new_weapon.index('damage = Q2ModScaleDamage(damage, 75);'))
+                # Machinegun's remaster animation timer runs at ~14Hz,
+                # while classic emits two extra bullets per five 10Hz ticks.
+                if edition == 'remaster':
+                    self.assertIn('ent->client->pers.weapon->id == IT_WEAPON_MACHINEGUN', new_weapon)
+                    self.assertIn('ent->client->ps.gunrate = ent->client->ps.gunrate * 14 / 10;', new_weapon)
+                    self.assertLess(
+                        new_weapon.index('ent->client->ps.gunrate = ent->client->ps.gunrate * 14 / 10;'),
+                        new_weapon.index('// network optimization...'))
+                else:
+                    self.assertIn('qboolean was_firing', new_weapon)
+                    self.assertIn('(level.framenum % 5) < 2', new_weapon)
+                    self.assertIn('ent->client->pers.inventory[ent->client->ammo_index] > 0', new_weapon)
+                    self.assertIn('Machinegun_Fire(ent);', new_weapon)
+
+                # Shotgun must skip pump frames after a shot and accept
+                # rising-edge trigger presses, not a continuously held trigger.
+                self.assertIn('ent->client->ps.gunframe = 17;', new_weapon)
+                self.assertIn('ent->client->weaponstate == WEAPON_FIRING', new_weapon)
+                self.assertIn('!(ent->client->latched_buttons & BUTTON_ATTACK)', new_weapon)
+                self.assertIn('ent->client->buttons &= ~BUTTON_ATTACK;', new_weapon)
+                self.assertIn('ent->client->buttons = old_buttons;', new_weapon)
+                if edition == 'remaster':
+                    self.assertIn('button_t old_buttons = ent->client->buttons;', new_weapon)
+                    self.assertIn('!ent->client->weapon_fire_buffered', new_weapon)
+                    self.assertIn('ent->client->ps.gunframe >= 8 &&', new_weapon)
+                else:
+                    self.assertIn('int old_buttons = ent->client->buttons;', new_weapon)
+                    self.assertIn('ent->client->ps.gunframe >= 9 &&', new_weapon)
                 # Chaingun's accelerated animation must reach 5 bullets/step.
                 self.assertIn('if ((frame >= 5 && frame < 14)', new_weapon)
                 self.assertIn('frame >= 15 && frame < 21 && !(ent->client->buttons & BUTTON_ATTACK)', new_weapon)
