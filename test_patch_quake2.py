@@ -3,7 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from patch_quake2 import (CAPS, INITIAL_CLASSIC, INITIAL_REMASTER,
-                          BANDOLIER_STOCK, PACK_STOCK, patch_sources, main)
+                          BANDOLIER_STOCK, PACK_STOCK, patch_sources, main,
+                          edit_powerup_stack)
 
 
 def fixture_client(edition):
@@ -320,6 +321,24 @@ def fixture_weapon(edition):
 
 
 class PatcherTests(unittest.TestCase):
+    def test_powerup_limit_accepts_indentation_variants(self):
+        """The SDK uses tabs but fixture source often uses spaces."""
+        for edition in ('remaster', 'classic'):
+            source = fixture_powerup(edition)
+            variants = [source]
+            if edition == 'remaster':
+                variants.append(source.replace('        (skill->', '\t\t(skill->'))
+                variants.append(source.replace('        (skill->', '\n \t (skill->'))
+            for text in variants:
+                with self.subTest(edition=edition, tabs='\t' in text):
+                    result = edit_powerup_stack(text, edition)
+                    self.assertEqual(result.count('if (quantity >= 3)'), 1)
+                    self.assertNotIn('quantity >= 2', result)
+                    self.assertIn('(quantity > 0)', result)
+                    with self.assertRaises(ValueError):
+                        edit_powerup_stack(result, edition)
+
+
     def test_all_caps_and_damage(self):
         for edition in ('classic', 'remaster'):
             with self.subTest(edition=edition):
