@@ -121,6 +121,75 @@ def fixture_view():
 """
 
 
+def fixture_powerup(edition):
+    if edition == 'remaster':
+        return """bool Pickup_Powerup(edict_t *ent, edict_t *other)
+{
+    int quantity;
+    quantity = other->client->pers.inventory[ent->item->id];
+    if ((skill->integer == 0 && quantity >= 3) ||
+        (skill->integer == 1 && quantity >= 2) ||
+        (skill->integer >= 2 && quantity >= 1))
+        return false;
+    if (coop->integer && !P_UseCoopInstancedItems() &&
+        (ent->item->flags & IF_STAY_COOP) && (quantity > 0))
+        return false;
+    other->client->pers.inventory[ent->item->id]++;
+    return true;
+}
+"""
+    return """qboolean Pickup_Powerup (edict_t *ent, edict_t *other)
+{
+    int quantity;
+    quantity = other->client->pers.inventory[ITEM_INDEX(ent->item)];
+    if ((skill->value == 1 && quantity >= 2) || (skill->value >= 2 && quantity >= 1))
+        return false;
+    if ((coop->value) && (ent->item->flags & IT_STAY_COOP) && (quantity > 0))
+        return false;
+    other->client->pers.inventory[ITEM_INDEX(ent->item)]++;
+    return true;
+}
+"""
+
+
+def fixture_rogue_powerups():
+    return """bool Pickup_Nuke(edict_t *ent, edict_t *other)
+{
+    int quantity = other->client->pers.inventory[ent->item->id];
+    if (quantity >= 1)
+        return false;
+    if (coop->integer && !P_UseCoopInstancedItems() &&
+        (ent->item->flags & IF_STAY_COOP) && (quantity > 0))
+        return false;
+    other->client->pers.inventory[ent->item->id]++;
+    return true;
+}
+
+bool Pickup_Doppleganger(edict_t *ent, edict_t *other)
+{
+    int quantity = other->client->pers.inventory[ent->item->id];
+    if (quantity >= 1) // FIXME - apply max to dopplegangers
+        return false;
+    other->client->pers.inventory[ent->item->id]++;
+    return true;
+}
+
+bool Pickup_Sphere(edict_t *ent, edict_t *other)
+{
+    if (other->client && other->client->owned_sphere)
+        return false;
+    int quantity = other->client->pers.inventory[ent->item->id];
+    if ((skill->integer == 1 && quantity >= 2) || (skill->integer >= 2 && quantity >= 1))
+        return false;
+    if ((coop->integer) && !P_UseCoopInstancedItems() &&
+        (ent->item->flags & IF_STAY_COOP) && (quantity > 0))
+        return false;
+    other->client->pers.inventory[ent->item->id]++;
+    return true;
+}
+"""
+
+
 def fixture_upgrade(edition):
     output = ''
     for func, values in (('Pickup_Bandolier', BANDOLIER_STOCK), ('Pickup_Pack', PACK_STOCK)):
@@ -134,7 +203,7 @@ def fixture_upgrade(edition):
         if edition == 'remaster':
             output += ' G_AdjustAmmoCap(other, AMMO_MAGSLUG, 75);\n' if func == 'Pickup_Bandolier' else ' G_AdjustAmmoCap(other, AMMO_MAGSLUG, 100);\n'
         output += '}\n'
-    return output + fixture_megahealth(edition) + fixture_armor(edition)
+    return output + fixture_powerup(edition) + fixture_megahealth(edition) + fixture_armor(edition)
 
 
 def fixture_chaingun(edition):
@@ -258,6 +327,8 @@ class PatcherTests(unittest.TestCase):
                 if edition == 'remaster':
                     original.append(fixture_view())
                 original.append(fixture_explosives(edition))
+                if edition == 'remaster':
+                    original.append(fixture_rogue_powerups())
                 patched = patch_sources(original, edition)
                 new_client, new_items, new_weapon = patched[:3]
                 for ammo, (base, bandolier, pack) in CAPS.items():
@@ -271,6 +342,20 @@ class PatcherTests(unittest.TestCase):
                         self.assertIn(f'G_AdjustAmmoCap(other, AMMO_{ammo.upper()}, {pack})', new_items)
                         if bandolier is not None:
                             self.assertIn(f'G_AdjustAmmoCap(other, AMMO_{ammo.upper()}, {bandolier})', new_items)
+                self.assertIn('if (quantity >= 3)', new_items)
+                self.assertEqual(new_items.count('if (quantity >= 3)'), 1)
+                self.assertNotIn('skill->integer == 1 && quantity >= 2', new_items)
+                self.assertNotIn('skill->value == 1 && quantity >= 2', new_items)
+                # Shared-coop protection still prevents re-collecting one
+                # individual persistent world item.
+                self.assertIn('(quantity > 0)', new_items)
+                if edition == 'remaster':
+                    rogue = patched[5]
+                    self.assertEqual(rogue.count('if (quantity >= 3)'), 3)
+                    self.assertNotIn('if (quantity >= 1)', rogue)
+                    self.assertIn('other->client->owned_sphere', rogue)
+                    self.assertIn('(quantity > 0)', rogue)
+                    self.assertIn('ent->item->id]++', rogue)
                 self.assertIn('base_count *= 2;' if edition == 'remaster' else
                               '(newinfo->base_count * 2)', new_items)
                 self.assertIn('inventory[IT_ARMOR_JACKET] = 5;' if edition == 'remaster' else
@@ -361,8 +446,8 @@ class PatcherTests(unittest.TestCase):
                 self.assertEqual(new_weapon.count('radius = (damage + 40) * 2.0f;'), 2)
                 self.assertIn('damage = Q2ModScaleDamage(damage, 75);', new_weapon)
                 self.assertIn('int radius_damage = 120;', new_weapon)
-                self.assertIn('ent->owner->client ? 1.5f : 1.0f', patched[-1])
-                self.assertIn('T_Damage(', patched[-1])
+                self.assertIn('ent->owner->client ? 1.5f : 1.0f', patched[4 if edition == 'remaster' else 3])
+                self.assertIn('T_Damage(', patched[4 if edition == 'remaster' else 3])
                 self.assertNotEqual(original[0], new_client)
                 self.assertNotEqual(original[1], new_items)
                 self.assertNotEqual(original[2], new_weapon)
@@ -385,6 +470,10 @@ class PatcherTests(unittest.TestCase):
                     originals.append(fixture_view())
                 files.append(root / ('g_weapon' + ext))
                 originals.append(fixture_explosives(edition))
+                if edition == 'remaster':
+                    (root / 'rogue').mkdir()
+                    files.append(root / 'rogue' / 'g_rogue_items.cpp')
+                    originals.append(fixture_rogue_powerups())
                 for f, contents in zip(files, originals):
                     f.write_text(contents, encoding='utf8')
                 self.assertEqual(main([str(root), '--edition', edition, '--dry-run']), 0)
